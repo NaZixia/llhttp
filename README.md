@@ -4,59 +4,40 @@
 Port of [http_parser][0] to [llparse][1].
 
 ## Why?
+让我们面对现实，[http_parser][0] 实际上几乎是无法维护的。即使是引入一个新的方法也会导致代码的显著变动。
 
-Let's face it, [http_parser][0] is practically unmaintainable. Even
-introduction of a single new method results in a significant code churn.
+该项目的目标是：
 
-This project aims to:
+* 使其可维护
+* 可验证
+* 尽可能提高基准测试
 
-* Make it maintainable
-* Verifiable
-* Improving benchmarks where possible
-
-More details in [Fedor Indutny's talk at JSConf EU 2019](https://youtu.be/x3k_5Mi66sY)
+更多详情请参阅 [Fedor Indutny 在 JSConf EU 2019 的演讲](https://youtu.be/x3k_5Mi66sY)
 
 ## How?
+随着时间的推移，人们尝试了不同的方法来改进 [http_parser][0] 的代码库。然而，它们都因导致显著的性能下降而失败了。
 
-Over time, different approaches for improving [http_parser][0]'s code base
-were tried. However, all of them failed due to resulting significant performance
-degradation.
-
-This project is a port of [http_parser][0] to TypeScript. [llparse][1] is used
-to generate the output C source file, which could be compiled and
-linked with the embedder's program (like [Node.js][7]).
+这个项目是 [http_parser][0] 到 TypeScript 的移植。使用 [llparse][1] 来生成输出的 C 源文件，这些文件可以编译并与嵌入程序（如 [Node.js][7]）链接。
 
 ## Performance
 
-So far llhttp outperforms http_parser:
+到目前为止，llhttp 的性能优于 http_parser：
 
-|                 | input size |  bandwidth   |  reqs/sec  |   time  |
-|:----------------|-----------:|-------------:|-----------:|--------:|
-| **llhttp**      | 8192.00 mb | 1777.24 mb/s | 3583799.39 req/sec | 4.61 s |
-| **http_parser** | 8192.00 mb | 694.66 mb/s | 1406180.33 req/sec | 11.79 s |
+|                 | 输入大小  |  带宽         |  请求/秒      |  时间     |
+|:----------------|-----------:|-------------:|-------------:|--------:|
+| **llhttp**      | 8192.00 MB | 1777.24 MB/s | 3583799.39 req/sec | 4.61 s |
+| **http_parser** | 8192.00 MB | 694.66 MB/s  | 1406180.33 req/sec | 11.79 s |
 
-llhttp is faster by approximately **156%**.
+llhttp 的速度快了大约 **156%**。
 
 ## Maintenance
+llhttp 项目大约有 1400 行 TypeScript 代码用于描述解析器本身，以及大约 450 行 C 代码和头文件用于提供辅助方法。整个 [http_parser][0] 大约由 2500 行 C 代码和 436 行头文件实现。
 
-llhttp project has about 1400 lines of TypeScript code describing the parser
-itself and around 450 lines of C code and headers providing the helper methods.
-The whole [http_parser][0] is implemented in approximately 2500 lines of C, and
-436 lines of headers.
+llhttp 中的所有优化和多字符匹配都是自动生成的，因此不会增加任何额外的维护成本。相反，http_parser 的大部分代码都是手工优化和展开的。与其描述“如何”解析 HTTP 请求/响应，维护者需要在 [http_parser][0] 中谨慎地实现新功能，考虑可能的性能下降并手动优化新代码。
 
-All optimizations and multi-character matching in llhttp are generated
-automatically, and thus doesn't add any extra maintenance cost. On the contrary,
-most of http_parser's code is hand-optimized and unrolled. Instead describing
-"how" it should parse the HTTP requests/responses, a maintainer should
-implement the new features in [http_parser][0] cautiously, considering
-possible performance degradation and manually optimizing the new code.
+## 验证
 
-## Verification
-
-The state machine graph is encoded explicitly in llhttp. The [llparse][1]
-automatically checks the graph for absence of loops and correct reporting of the
-input ranges (spans) like header names and values. In the future, additional
-checks could be performed to get even stricter verification of the llhttp.
+状态机图在 llhttp 中被明确编码。[llparse][1] 自动检查图中是否存在循环，并确保输入范围（如头部名称和值）的正确报告。未来，可以执行额外的检查，以实现对 llhttp 的更严格验证。
 
 ## Usage
 
@@ -74,19 +55,18 @@ int main() {
 	llhttp_t parser;
 	llhttp_settings_t settings;
 
-	/*Initialize user callbacks and settings */
+	/* 初始化用户回调函数和设置 */
 	llhttp_settings_init(&settings);
 
 	/*Set user callback */
 	settings.on_message_complete = handle_on_message_complete;
 
-	/*Initialize the parser in HTTP_BOTH mode, meaning that it will select between
-	*HTTP_REQUEST and HTTP_RESPONSE parsing automatically while reading the first
-	*input.
+	/* 在 HTTP_BOTH 模式下初始化解析器，意味着它将在读取第一个输入时自动选择
+	* HTTP_REQUEST 和 HTTP_RESPONSE 解析。
 	*/
 	llhttp_init(&parser, HTTP_BOTH, &settings);
 
-	/*Parse request! */
+	/* 解析请求！ */
 	const char* request = "GET / HTTP/1.1\r\n\r\n";
 	int request_len = strlen(request);
 
@@ -97,191 +77,163 @@ int main() {
 		fprintf(stderr, "Parse error: %s %s\n", llhttp_errno_name(err), parser.reason);
 	}
 }
-```
-For more information on API usage, please refer to [src/native/api.h](https://github.com/nodejs/llhttp/blob/main/src/native/api.h).
-
+```有关 API 使用的更多信息，请参阅 [src/native/api.h]
+(https://github.com/nodejs/llhttp/blob/main/src/native/api.h)。
 ## API
 
 ### llhttp_settings_t
 
-The settings object contains a list of callbacks that the parser will invoke.
+设置对象包含解析器将调用的回调函数列表。
 
-The following callbacks can return `0` (proceed normally), `-1` (error) or `HPE_PAUSED` (pause the parser):
+以下回调函数可以返回 `0`（正常继续）、`-1`（错误）或 `HPE_PAUSED`（暂停解析器）：
 
-* `on_message_begin`: Invoked when a new request/response starts.
-* `on_message_complete`: Invoked when a request/response has been completedly parsed.
-* `on_url_complete`: Invoked after the URL has been parsed.
-* `on_method_complete`: Invoked after the HTTP method has been parsed.
-* `on_version_complete`: Invoked after the HTTP version has been parsed.
-* `on_status_complete`: Invoked after the status code has been parsed.
-* `on_header_field_complete`: Invoked after a header name has been parsed.
-* `on_header_value_complete`: Invoked after a header value has been parsed.
-* `on_chunk_header`: Invoked after a new chunk is started. The current chunk length is stored in `parser->content_length`.
-* `on_chunk_extension_name_complete`: Invoked after a chunk extension name is started.
-* `on_chunk_extension_value_complete`: Invoked after a chunk extension value is started.
-* `on_chunk_complete`: Invoked after a new chunk is received. 
-* `on_reset`: Invoked after `on_message_complete` and before `on_message_begin` when a new message 
-   is received on the same parser. This is not invoked for the first message of the parser.
+* `on_message_begin`: 在新请求/响应开始时调用。
+* `on_message_complete`: 在请求/响应完全解析完成时调用。
+* `on_url_complete`: 在 URL 解析完成后调用。
+* `on_method_complete`: 在 HTTP 方法解析完成后调用。
+* `on_version_complete`: 在 HTTP 版本解析完成后调用。
+* `on_status_complete`: 在状态码解析完成后调用。
+* `on_header_field_complete`: 在头部名称解析完成后调用。
+* `on_header_value_complete`: 在头部值解析完成后调用。
+* `on_chunk_header`: 在开始新的块后调用。当前块长度存储在 `parser->content_length` 中。
+* `on_chunk_extension_name_complete`: 在块扩展名开始后调用。
+* `on_chunk_extension_value_complete`: 在块扩展值开始后调用。
+* `on_chunk_complete`: 在接收到新块后调用。
+* `on_reset`: 在接收到同一解析器上的新消息之后，调用 `on_message_complete` 之后和 `on_message_begin` 之前。对于解析器的第一条消息，不会调用此函数。以下回调函数可以返回 `0`（正常继续）、`-1`（错误）或 `HPE_USER`（来自回调函数的错误）：
 
-The following callbacks can return `0` (proceed normally), `-1` (error) or `HPE_USER` (error from the callback): 
+* `on_url`: 当收到 URL 的另一个字符时调用。
+* `on_status`: 当收到状态的另一个字符时调用。
+* `on_method`: 当收到方法的另一个字符时调用。当解析器使用 `HTTP_BOTH` 创建并且输入为响应时，也会在第一条消息的 `HTTP/` 序列中调用此函数。
+* `on_version`: 当收到版本的另一个字符时调用。
+* `on_header_field`: 当收到头部名称的另一个字符时调用。
+* `on_header_value`: 当收到头部值的另一个字符时调用。
+* `on_chunk_extension_name`: 当收到块扩展名的另一个字符时调用。
+* `on_chunk_extension_value`: 当收到扩展值的另一个字符时调用。
 
-* `on_url`: Invoked when another character of the URL is received. 
-* `on_status`: Invoked when another character of the status is received.
-* `on_method`: Invoked when another character of the method is received. 
-   When parser is created with `HTTP_BOTH` and the input is a response, this also invoked for the sequence `HTTP/`
-   of the first message.
-* `on_version`: Invoked when another character of the version is received.
-* `on_header_field`: Invoked when another character of a header name is received.
-* `on_header_value`: Invoked when another character of a header value is received.
-* `on_chunk_extension_name`: Invoked when another character of a chunk extension name is received.
-* `on_chunk_extension_value`: Invoked when another character of a extension value is received.
+当头部完成时调用的 `on_headers_complete` 回调函数可以返回：
 
-The callback `on_headers_complete`, invoked when headers are completed, can return:
-
-* `0`: Proceed normally.
-* `1`: Assume that request/response has no body, and proceed to parsing the next message.
-* `2`: Assume absence of body (as above) and make `llhttp_execute()` return `HPE_PAUSED_UPGRADE`.
-* `-1`: Error
-* `HPE_PAUSED`: Pause the parser.
-
+* `0`: 正常继续。
+* `1`: 假定请求/响应没有主体，并继续解析下一条消息。
+* `2`: 假定没有主体（如上所述），并使 `llhttp_execute()` 返回 `HPE_PAUSED_UPGRADE`。
+* `-1`: 错误
+* `HPE_PAUSED`: 暂停解析器。
 ### `void llhttp_init(llhttp_t* parser, llhttp_type_t type, const llhttp_settings_t* settings)`
 
-Initialize the parser with specific type and user settings.
+使用特定类型和用户设置初始化解析器。
 
 ### `uint8_t llhttp_get_type(llhttp_t* parser)`
 
-Returns the type of the parser.
+返回解析器的类型。
 
 ### `uint8_t llhttp_get_http_major(llhttp_t* parser)`
 
-Returns the major version of the HTTP protocol of the current request/response.
+返回当前请求/响应的 HTTP 协议的主版本号。
 
 ### `uint8_t llhttp_get_http_minor(llhttp_t* parser)`
 
-Returns the minor version of the HTTP protocol of the current request/response.
+返回当前请求/响应的 HTTP 协议的次版本号。
 
 ### `uint8_t llhttp_get_method(llhttp_t* parser)`
 
-Returns the method of the current request.
+返回当前请求的方法。
 
 ### `int llhttp_get_status_code(llhttp_t* parser)`
 
-Returns the method of the current response.
+返回当前响应的状态码。### `uint8_t llhttp_get_upgrade(llhttp_t* parser)`
 
-### `uint8_t llhttp_get_upgrade(llhttp_t* parser)`
-
-Returns `1` if request includes the `Connection: upgrade` header.
+如果请求包含 `Connection: upgrade` 头，则返回 `1`。
 
 ### `void llhttp_reset(llhttp_t* parser)`
 
-Reset an already initialized parser back to the start state, preserving the 
-existing parser type, callback settings, user data, and lenient flags.
+将已经初始化的解析器重置回起始状态，保留现有的解析器类型、回调设置、用户数据和宽松标志。
 
 ### `void llhttp_settings_init(llhttp_settings_t* settings)`
 
-Initialize the settings object.
+初始化设置对象。
 
 ### `llhttp_errno_t llhttp_execute(llhttp_t* parser, const char* data, size_t len)`
 
-Parse full or partial request/response, invoking user callbacks along the way.
 
-If any of `llhttp_data_cb` returns errno not equal to `HPE_OK` - the parsing interrupts, 
-and such errno is returned from `llhttp_execute()`. If `HPE_PAUSED` was used as a errno, 
-the execution can be resumed with `llhttp_resume()` call.
+`llhttp_execute` 在给定的数据上执行解析器。解析器将逐步解析数据，并根据解析的结果调用相应的回调函数。解析完成后，将返回相应的错误代码（如果有）。解析完整或部分的请求/响应，在解析过程中调用用户回调函数。
 
-In a special case of CONNECT/Upgrade request/response `HPE_PAUSED_UPGRADE` is returned 
-after fully parsing the request/response. If the user wishes to continue parsing, 
-they need to invoke `llhttp_resume_after_upgrade()`.
+如果任何 `llhttp_data_cb` 返回的 errno 不等于 `HPE_OK`，解析过程将中断，并从 `llhttp_execute()` 返回该 errno。如果 `HPE_PAUSED` 作为 errno 使用，可以通过调用 `llhttp_resume()` 来恢复执行。
 
-**if this function ever returns a non-pause type error, it will continue to return 
-the same error upon each successive call up until `llhttp_init()` is called.**
+在 CONNECT/Upgrade 请求/响应的特殊情况下，在完全解析请求/响应后，将返回 `HPE_PAUSED_UPGRADE`。如果用户希望继续解析，他们需要调用 `llhttp_resume_after_upgrade()`。
+
+**如果此函数返回非暂停类型的错误，它将继续在每次成功调用之前返回相同的错误，直到调用 `llhttp_init()`。**
 
 ### `llhttp_errno_t llhttp_finish(llhttp_t* parser)`
+此方法应在另一端没有进一步发送字节时调用（例如，关闭了 TCP 连接的可读端）。
 
-This method should be called when the other side has no further bytes to
-send (e.g. shutdown of readable side of the TCP connection.)
+没有 `Content-Length` 和其他消息的请求可能需要将所有传入的字节视为消息体的一部分，直到连接的最后一个字节。
 
-Requests without `Content-Length` and other messages might require treating
-all incoming bytes as the part of the body, up to the last byte of the
-connection. 
-
-This method will invoke `on_message_complete()` callback if the
-request was terminated safely. Otherwise a error code would be returned.
-
+如果请求已安全终止，则此方法将调用 `on_message_complete()` 回调。否则，将返回错误代码。
 
 ### `int llhttp_message_needs_eof(const llhttp_t* parser)`
 
-Returns `1` if the incoming message is parsed until the last byte, and has to be completed by calling `llhttp_finish()` on EOF.
+如果传入消息已解析到最后一个字节，并且必须通过在 EOF 上调用 `llhttp_finish()` 来完成，则返回 `1`。
 
 ### `int llhttp_should_keep_alive(const llhttp_t* parser)`
 
-Returns `1` if there might be any other messages following the last that was
-successfully parsed.
+如果可能还有其他消息跟随上次成功解析的消息，则返回 `1`。
 
-### `void llhttp_pause(llhttp_t* parser)`
+### `void llhttp_pause(llhttp_t* parser)`使进一步调用 `llhttp_execute()` 返回 `HPE_PAUSED`，并设置相应的错误原因。
 
-Make further calls of `llhttp_execute()` return `HPE_PAUSED` and set
-appropriate error reason.
-
-**Do not call this from user callbacks! User callbacks must return
-`HPE_PAUSED` if pausing is required.**
+**不要从用户回调中调用此函数！如果需要暂停，则用户回调必须返回 `HPE_PAUSED`。**
 
 ### `void llhttp_resume(llhttp_t* parser)`
 
-Might be called to resume the execution after the pause in user's callback.
+在用户回调中暂停后，可能会调用此函数以恢复执行。
 
-See `llhttp_execute()` above for details.
+有关详细信息，请参阅上面的 `llhttp_execute()`。
 
-**Call this only if `llhttp_execute()` returns `HPE_PAUSED`.**
+**仅在 `llhttp_execute()` 返回 `HPE_PAUSED` 时调用此函数。**
 
 ### `void llhttp_resume_after_upgrade(llhttp_t* parser)`
 
-Might be called to resume the execution after the pause in user's callback.
-See `llhttp_execute()` above for details.
+在用户回调中暂停后，可能会调用此函数以恢复执行。
 
-**Call this only if `llhttp_execute()` returns `HPE_PAUSED_UPGRADE`**
+有关详细信息，请参阅上面的 `llhttp_execute()`。
+
+**仅在 `llhttp_execute()` 返回 `HPE_PAUSED_UPGRADE` 时调用此函数。**
 
 ### `llhttp_errno_t llhttp_get_errno(const llhttp_t* parser)`
 
-Returns the latest error.
+返回最新的错误。
 
 ### `const char* llhttp_get_error_reason(const llhttp_t* parser)`
 
-Returns the verbal explanation of the latest returned error.
+返回最新返回的错误的文本解释。
 
-**User callback should set error reason when returning the error. See
-`llhttp_set_error_reason()` for details.**
+**当返回错误时，用户回调应设置错误原因。参见 `llhttp_set_error_reason()` 获取详细信息。**
 
 ### `void llhttp_set_error_reason(llhttp_t* parser, const char* reason)`
 
-Assign verbal description to the returned error. Must be called in user
-callbacks right before returning the errno.
+将文本描述分配给返回的错误。必须在用户回调中，在返回 errno 之前调用此函数。
 
-**`HPE_USER` error code might be useful in user callbacks.**
-
+**在用户回调中，`HPE_USER` 错误代码可能很有用。**
 ### `const char* llhttp_get_error_pos(const llhttp_t* parser)`
 
-Returns the pointer to the last parsed byte before the returned error. The
-pointer is relative to the `data` argument of `llhttp_execute()`.
+返回返回的错误之前最后解析的字节的指针。指针相对于 `llhttp_execute()` 的 `data` 参数。
 
-**This method might be useful for counting the number of parsed bytes.**
+**此方法可能对计算已解析字节的数量很有用。**
 
 ### `const char* llhttp_errno_name(llhttp_errno_t err)`
 
-Returns textual name of error code.
+返回错误代码的文本名称。
 
 ### `const char* llhttp_method_name(llhttp_method_t method)`
 
-Returns textual name of HTTP method.
+返回 HTTP 方法的文本名称。
 
 ### `const char* llhttp_status_name(llhttp_status_t status)`
 
-Returns textual name of HTTP status.
+返回 HTTP 状态的文本名称。
 
 ### `void llhttp_set_lenient_headers(llhttp_t* parser, int enabled)`
 
-Enables/disables lenient header value parsing (disabled by default).
-Lenient parsing disables header value token checks, extending llhttp's
+启用/禁用宽松的头部值解析（默认情况下禁用）。
+宽松解析禁用头部值令牌检查，扩展了 llhttp 解析器的功能。's
 protocol support to highly non-compliant clients/server. 
 
 No `HPE_INVALID_HEADER_TOKEN` will be raised for incorrect header values when
@@ -410,11 +362,11 @@ make
 * Ruby: [metabahn/llhttp][9]
 * Rust: [JackLiar/rust-llhttp][10]
 
-### Using with CMake
+### 使用 CMake
 
-If you want to use this library in a CMake project as a shared library, you can use the snippet below.
+如果您想将此库用作 CMake 项目中的共享库，您可以使用下面的代码片段。
 
-```
+```cmake
 FetchContent_Declare(llhttp
   URL "https://github.com/nodejs/llhttp/archive/refs/tags/release/v8.1.0.tar.gz")
 
@@ -424,9 +376,9 @@ FetchContent_MakeAvailable(llhttp)
 target_link_libraries(${EXAMPLE_PROJECT_NAME} ${PROJECT_LIBRARIES} llhttp_shared ${PROJECT_NAME})
 ```
 
-If you want to use this library in a CMake project as a static library, you can set some cache variables first.
+如果您想在 CMake 项目中将此库用作静态库，您可以首先设置一些缓存变量。
 
-```
+```cmake
 FetchContent_Declare(llhttp
   URL "https://github.com/nodejs/llhttp/archive/refs/tags/release/v8.1.0.tar.gz")
 
@@ -438,54 +390,41 @@ FetchContent_MakeAvailable(llhttp)
 target_link_libraries(${EXAMPLE_PROJECT_NAME} ${PROJECT_LIBRARIES} llhttp_static ${PROJECT_NAME})
 ```
 
-_Note that using the git repo directly (e.g., via a git repo url and tag) will not work with FetchContent_Declare because [CMakeLists.txt](./CMakeLists.txt) requires string replacements (e.g., `_RELEASE_`) before it will build._
+请注意，直接使用 git 存储库（例如，通过 git 存储库 URL 和标签）将无法使用 FetchContent_Declare，因为 [CMakeLists.txt](./CMakeLists.txt) 需要进行字符串替换（例如，`_RELEASE_`）才能构建。
 
 ## Building on Windows
 
-### Installation
+### 安装
 
 * `choco install git`
 * `choco install node`
-* `choco install llvm` (or install the `C++ Clang tools for Windows` optional package from the Visual Studio 2019 installer)
-* `choco install make` (or if you have MinGW, it comes bundled)
+* `choco install llvm`（或者从 Visual Studio 2019 安装程序中安装 `C++ Clang 工具` 可选包）
+* `choco install make`（或者如果你已经安装了 MinGW，它已经包含在其中）
 
-1. Ensure that `Clang` and `make` are in your system path.
-2. Using Git Bash, clone the repo to your preferred location.
-3. Cd into the cloned directory and run `npm ci`
-5. Run `make`
-6. Your `repo/build` directory should now have `libllhttp.a` and `libllhttp.so` static and dynamic libraries.
-7. When building your executable, you can link to these libraries. Make sure to set the build folder as an include path when building so you can reference the declarations in `repo/build/llhttp.h`.
+1. 确保 `Clang` 和 `make` 已添加到系统路径中。
+2. 使用 Git Bash，将存储库克隆到您喜欢的位置。
+3. 切换到克隆的目录并运行 `npm ci`。
+5. 运行 `make`。
+6. 您的 `repo/build` 目录现在应该包含 `libllhttp.a` 和 `libllhttp.so` 静态和动态库。
+7. 在构建可执行文件时，您可以链接到这些库。确保在构建时将构建文件夹设置为包含路径，以便您可以引用 `repo/build/llhttp.h` 中的声明。
 
-### A simple example on linking with the library:
+### 链接库的简单示例：
 
-Assuming you have an executable `main.cpp` in your current working directory, you would run: `clang++ -Os -g3 -Wall -Wextra -Wno-unused-parameter -I/path/to/llhttp/build main.cpp /path/to/llhttp/build/libllhttp.a -o main.exe`.
+假设您在当前工作目录中有一个可执行文件 `main.cpp`，您可以运行：`clang++ -Os -g3 -Wall -Wextra -Wno-unused-parameter -I/path/to/llhttp/build main.cpp /path/to/llhttp/build/libllhttp.a -o main.exe`。
 
-If you are getting `unresolved external symbol` linker errors you are likely attempting to build `llhttp.c` without linking it with object files from `api.c` and `http.c`.
+如果您遇到 `unresolved external symbol` 链接器错误，很可能是您试图构建 `llhttp.c`，但没有将其与来自 `api.c` 和 `http.c` 的对象文件链接在一起。
 
-#### LICENSE
+#### 许可证
 
-This software is licensed under the MIT License.
+本软件根据 MIT 许可证获得许可。
 
-Copyright Fedor Indutny, 2018.
+版权所有 Fedor Indutny，2018。
 
-Permission is hereby granted, free of charge, to any person obtaining a
-copy of this software and associated documentation files (the
-"Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to permit
-persons to whom the Software is furnished to do so, subject to the
-following conditions:
+特此授予任何获得本软件及相关文档文件（以下简称"软件"）副本的人免费许可，以处理本软件而无需限制，包括但不限于使用、复制、修改、合并、发布、分发、再许可和/或销售软件的副本，以及允许使用本软件的人员这样做，但需遵守以下条件：
 
-The above copyright notice and this permission notice shall be included
-in all copies or substantial portions of the Software.
+在所有副本或重要部分的软件中必须包含上述版权声明和本许可声明。
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-USE OR OTHER DEALINGS IN THE SOFTWARE.
+本软件按"原样"提供，不提供任何形式的明示或暗示担保，包括但不限于适销性、特定用途适用性和非侵权性的保证。在任何情况下，作者或版权持有人对任何索赔、损害或其他责任不承担责任，无论是在合同诉讼、侵权行为或其他情况下，都与软件或软件的使用或其他交易有关。
 
 [0]: https://github.com/nodejs/http-parser
 [1]: https://github.com/nodejs/llparse
